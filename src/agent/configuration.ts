@@ -23,7 +23,7 @@ export const ensureConfiguration = (
       configurable?.localLlmBaseUrl ||
       process.env.LLM_BASE_URL ||
       "http://localhost:11434",
-    localLlm: configurable?.localLlm || "llama3.2",
+    localLlm: configurable?.localLlm || "command-r7b:latest",
     searchApi: configurable?.searchApi || SearchAPI.TAVILY,
   };
 };
