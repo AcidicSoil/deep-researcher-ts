@@ -7,7 +7,7 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 12,
     parser: "@typescript-eslint/parser",
-    project: "./tsconfig.json",
+    project: ["./tsconfig.json", "./src/ui/tsconfig.json"],
     sourceType: "module",
   },
   plugins: ["import", "@typescript-eslint", "no-instanceof"],
@@ -36,7 +36,14 @@ module.exports = {
     "class-methods-use-this": 0,
     "import/no-extraneous-dependencies": [
       "error",
-      { devDependencies: ["**/*.test.ts"] },
+      {
+        devDependencies: [
+          "**/*.test.ts",
+          "**/vite.config.ts",
+          "**/*.config.ts",
+          "**/*.config.js",
+        ],
+      },
     ],
     "import/no-unresolved": 0,
     "import/prefer-default-export": 0,

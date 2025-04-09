@@ -62,6 +62,36 @@ yarn install
 docker compose up -d
 ```
 
+### Using the React UI
+
+The project now includes a modern React UI for interacting with the research assistant.
+
+1. Install dependencies:
+
+```bash
+yarn install
+```
+
+2. Run both the backend server and UI in development mode:
+
+```bash
+yarn dev
+```
+
+This will start:
+
+- The backend API server at http://localhost:3001
+- The UI development server at http://localhost:3000
+
+3. For production use, build both and start the server:
+
+```bash
+yarn build:all
+yarn start
+```
+
+In production mode, both the API and UI are served from the same port (default: 3001).
+
 ### Using the LangGraph Studio UI
 
 #### Docker Compose

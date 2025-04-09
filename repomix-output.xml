@@ -1,0 +1,2814 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: src/**/*.ts, src/**/*.tsx, **/*.md, **/*.json
+- Files matching these patterns are excluded: node_modules/**, .git/**, dist/**, build/**, .next/**, coverage/**, .cache/**, .vscode/**, .idea/**, **/*.log, **/.DS_Store, **/npm-debug.log*, **/yarn-debug.log*, **/yarn-error.log*, .yarn/*, **/.turbo, **/.eslintcache, .env, .langgraph_api
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+langgraph.json
+package.json
+README.md
+src/agent/configuration.ts
+src/agent/graph.ts
+src/agent/prompts.ts
+src/agent/state.ts
+src/nodes/finalizeSummary.ts
+src/nodes/generateQuery.ts
+src/nodes/reflectSummary.ts
+src/nodes/summarizeSources.ts
+src/nodes/webResearch.ts
+src/route/api.ts
+src/route/research.ts
+src/server.ts
+src/ui/README.md
+src/ui/src/App.tsx
+src/ui/src/components/features/EventCard.tsx
+src/ui/src/components/features/QuickAction.tsx
+src/ui/src/components/features/TaskCard.tsx
+src/ui/src/components/Header.tsx
+src/ui/src/components/layout/Header.tsx
+src/ui/src/components/ResearchForm.tsx
+src/ui/src/components/ResearchResults.tsx
+src/ui/src/main.tsx
+src/ui/src/pages/Architecture.tsx
+src/ui/src/pages/Docs.tsx
+src/ui/src/pages/Performance.tsx
+src/ui/src/pages/Testing.tsx
+src/ui/src/pages/ThirdPartyLibraries.tsx
+src/ui/src/types.ts
+src/ui/tsconfig.json
+src/ui/tsconfig.node.json
+src/ui/vite.config.ts
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/route/api.ts">
+import express from "express";
+import { DEFAULT_CONFIG, SUMMARY_DEFAULT_CONFIG } from "../agent/configuration";
+import { graph } from "../agent/graph";
+import { StateAnnotation } from "../agent/state";
+
+const router = express.Router();
+
+// POST /api/research - Start a new research task
+router.post("/research", async (req, res) => {
+  try {
+    const { topic } = req.body;
+
+    if (!topic || typeof topic !== "string") {
+      return res.status(400).json({ error: "Topic is required" });
+    }
+
+    const initialState = {
+      ...StateAnnotation.init({
+        researchTopic: topic,
+        searchQuery: "",
+        researchLoopCount: 0,
+        runningSummary: "",
+      }),
+    };
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      ...SUMMARY_DEFAULT_CONFIG,
+      maxWebResearchLoops: 2, // Limiting the number of research loops for API usage
+    };
+
+    // Execute the LangGraph
+    const result = await graph.invoke(initialState, { configurable: config });
+
+    // Format the response
+    const response = {
+      summary: result.runningSummary,
+      query: result.searchQuery,
+      sources: result.sourcesGathered.map((source: string) => {
+        // Basic parsing of source strings - this would depend on the actual format
+        const parts = source.split("|");
+        return {
+          title: parts[0] || "Unknown Source",
+          url: parts[1] || "#",
+          snippet: parts[2] || "No description available",
+        };
+      }),
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Research error:", error);
+    res.status(500).json({
+      error: "An error occurred during research",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+export default router;
+</file>
+
+<file path="src/server.ts">
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import path from "path";
+import apiRouter from "./route/api";
+
+// Load environment variables
+dotenv.config();
+
+// Create Express server
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// API routes
+app.use("/api", apiRouter);
+
+// Serve static frontend in production
+if (process.env.NODE_ENV === "production") {
+  // Serve static files
+  app.use(express.static(path.join(__dirname, "../dist/ui")));
+
+  // All remaining requests return the React app
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/ui/index.html"));
+  });
+}
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`API available at http://localhost:${PORT}/api`);
+  if (process.env.NODE_ENV === "production") {
+    console.log(`UI available at http://localhost:${PORT}`);
+  } else {
+    console.log(
+      `UI development server should be started separately with 'yarn dev:ui'`,
+    );
+  }
+});
+
+export default app;
+</file>
+
+<file path="src/ui/README.md">
+# Deep Researcher UI
+
+This is the UI component for the Deep Researcher application, providing a user-friendly interface for performing web research and viewing results.
+
+## Overview
+
+The UI is built with React and uses:
+
+- Tailwind CSS for styling
+- Vite for development and bundling
+- TypeScript for type safety
+
+## Development
+
+### Starting the UI in Development Mode
+
+To start the UI in development mode:
+
+```bash
+# From the project root
+yarn dev:ui
+```
+
+This will start the Vite development server for the UI only. The UI will be available at http://localhost:3000.
+
+### Starting the Full Application
+
+To start both the backend server and the UI in development mode:
+
+```bash
+# From the project root
+yarn dev
+```
+
+This uses concurrently to start both servers. The API server will be available at http://localhost:3001 and the UI will be available at http://localhost:3000.
+
+## Building for Production
+
+To build the UI for production:
+
+```bash
+# From the project root
+yarn build:ui
+```
+
+This will create a production build in the `dist/ui` directory.
+
+To build the entire application (backend and frontend):
+
+```bash
+yarn build:all
+```
+
+## Production Deployment
+
+In production, the backend server will serve the UI files statically. Start the production server with:
+
+```bash
+yarn start
+```
+
+The full application will be available at http://localhost:3001 (or the port specified in your environment).
+
+## Project Structure
+
+```
+src/ui/
+├── index.html         # Main HTML entry point
+├── vite.config.ts     # Vite configuration
+├── tailwind.config.js # Tailwind CSS configuration
+├── postcss.config.js  # PostCSS configuration
+├── src/               # Source code
+│   ├── main.tsx       # React entry point
+│   ├── App.tsx        # Main App component
+│   ├── index.css      # Global styles
+│   ├── types.ts       # TypeScript interfaces
+│   └── components/    # React components
+│       ├── Header.tsx
+│       ├── ResearchForm.tsx
+│       └── ResearchResults.tsx
+└── README.md          # This file
+```
+
+## API Integration
+
+The UI communicates with the backend through a REST API:
+
+- `POST /api/research` - Starts a research task with the provided topic
+</file>
+
+<file path="src/ui/src/App.tsx">
+import { EventCard } from "./components/features/EventCard";
+import { QuickAction } from "./components/features/QuickAction";
+import { TaskCard } from "./components/features/TaskCard";
+import { Header } from "./components/layout/Header";
+import "./styles/animations.css";
+
+export function App() {
+  const priorityTasks = [
+    {
+      title: "Finalize Q2 financial report",
+      dueDate: "Due today at 3:00 PM",
+      priority: "high" as const,
+    },
+    {
+      title: "Prepare client presentation",
+      dueDate: "Meeting tomorrow at 10:00 AM",
+      priority: "medium" as const,
+    },
+  ];
+
+  const todayEvents = [
+    {
+      title: "Team Standup",
+      time: "9:30 AM - 10:00 AM",
+      location: "Zoom",
+      icon: "users",
+      iconBgColor: "bg-blue-100",
+      iconColor: "text-blue-500",
+    },
+    {
+      title: "Client Call",
+      time: "11:00 AM - 11:30 AM",
+      location: "Acme Corp",
+      icon: "phone",
+      iconBgColor: "bg-green-100",
+      iconColor: "text-green-500",
+    },
+    {
+      title: "Project Review",
+      time: "2:00 PM - 3:00 PM",
+      location: "Conference Room B",
+      icon: "chart-line",
+      iconBgColor: "bg-purple-100",
+      iconColor: "text-purple-500",
+    },
+  ];
+
+  const quickActions = [
+    { icon: "envelope", label: "Email" },
+    { icon: "calendar", label: "Schedule" },
+    { icon: "tasks", label: "Tasks" },
+    { icon: "file", label: "Files" },
+  ];
+
+  return (
+    <div className="max-w-md mx-auto bg-white min-h-screen shadow-lg overflow-hidden flex flex-col">
+      <Header />
+
+      <main className="flex-1 overflow-y-auto p-4">
+        {/* Welcome Header */}
+        <div className="mb-6 animate-fade-in">
+          <h2 className="text-2xl font-bold mb-1">Good morning, Michael</h2>
+          <p className="text-gray-600">Here's your daily briefing</p>
+        </div>
+
+        {/* Priority Tasks */}
+        <div
+          className="mb-6 animate-fade-in"
+          style={{ animationDelay: "0.1s" }}
+        >
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-lg flex items-center">
+              <i className="fas fa-star text-yellow-500 mr-2"></i>
+              Priority Tasks
+            </h3>
+            <button className="text-blue-500 text-sm material-ripple">
+              View all
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {priorityTasks.map((task, index) => (
+              <TaskCard
+                key={index}
+                title={task.title}
+                dueDate={task.dueDate}
+                priority={task.priority}
+                onOptionsClick={() =>
+                  console.log("Options clicked for task:", task.title)
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Today's Agenda */}
+        <div
+          className="mb-6 animate-fade-in"
+          style={{ animationDelay: "0.2s" }}
+        >
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-lg flex items-center">
+              <i className="fas fa-calendar-day text-blue-500 mr-2"></i>
+              Today's Agenda
+            </h3>
+            <button className="text-blue-500 text-sm material-ripple">
+              Add event
+            </button>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            {todayEvents.map((event, index) => (
+              <EventCard
+                key={index}
+                {...event}
+                isLastItem={index === todayEvents.length - 1}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="animate-fade-in" style={{ animationDelay: "0.3s" }}>
+          <h3 className="font-bold text-lg mb-3">Quick Actions</h3>
+          <div className="grid grid-cols-4 gap-3">
+            {quickActions.map((action, index) => (
+              <QuickAction
+                key={index}
+                icon={action.icon}
+                label={action.label}
+                onClick={() =>
+                  console.log("Quick action clicked:", action.label)
+                }
+              />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+</file>
+
+<file path="src/ui/src/components/features/EventCard.tsx">
+interface EventCardProps {
+  title: string;
+  time: string;
+  location: string;
+  icon: string;
+  iconBgColor: string;
+  iconColor: string;
+  isLastItem?: boolean;
+}
+
+export function EventCard({
+  title,
+  time,
+  location,
+  icon,
+  iconBgColor,
+  iconColor,
+  isLastItem = false,
+}: EventCardProps) {
+  return (
+    <div
+      className={`p-4 flex items-center ${!isLastItem ? "border-b border-gray-100" : ""}`}
+    >
+      <div
+        className={`w-10 h-10 rounded-full ${iconBgColor} flex items-center justify-center mr-3`}
+      >
+        <i className={`fas fa-${icon} ${iconColor}`}></i>
+      </div>
+      <div>
+        <p className="font-medium">{title}</p>
+        <p className="text-sm text-gray-500">
+          {time} • {location}
+        </p>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/ui/src/components/features/QuickAction.tsx">
+interface QuickActionProps {
+  icon: string;
+  label: string;
+  iconBgColor?: string;
+  iconColor?: string;
+  onClick?: () => void;
+}
+
+export function QuickAction({
+  icon,
+  label,
+  iconBgColor = "bg-blue-100",
+  iconColor = "text-blue-500",
+  onClick,
+}: QuickActionProps) {
+  return (
+    <button
+      className="flex flex-col items-center p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition material-ripple"
+      onClick={onClick}
+      aria-label={label}
+    >
+      <div
+        className={`w-10 h-10 rounded-full ${iconBgColor} flex items-center justify-center mb-1`}
+      >
+        <i className={`fas fa-${icon} ${iconColor}`}></i>
+      </div>
+      <span className="text-sm text-gray-700">{label}</span>
+    </button>
+  );
+}
+</file>
+
+<file path="src/ui/src/components/features/TaskCard.tsx">
+interface TaskCardProps {
+  title: string;
+  dueDate: string;
+  priority: "high" | "medium" | "low";
+  onOptionsClick?: () => void;
+}
+
+export function TaskCard({
+  title,
+  dueDate,
+  priority,
+  onOptionsClick,
+}: TaskCardProps) {
+  const priorityColors = {
+    high: "red",
+    medium: "yellow",
+    low: "green",
+  };
+
+  const color = priorityColors[priority];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition">
+      <div className="flex items-start">
+        <div className="mr-3 mt-1">
+          <div
+            className={`w-5 h-5 rounded-full border-2 border-${color}-500 flex items-center justify-center`}
+          >
+            <div className={`w-3 h-3 rounded-full bg-${color}-500`}></div>
+          </div>
+        </div>
+        <div className="flex-1">
+          <p className="font-medium">{title}</p>
+          <p className="text-sm text-gray-500 mt-1">{dueDate}</p>
+        </div>
+        <button
+          className="text-gray-400 hover:text-blue-500 material-ripple"
+          onClick={onOptionsClick}
+          aria-label="Task options"
+          title="Task options"
+        >
+          <i className="fas fa-ellipsis-vertical"></i>
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/ui/src/components/Header.tsx">
+import React from "react";
+
+const Header: React.FC = () => {
+  return (
+    <header className="bg-primary-700 text-white shadow-md">
+      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+        <div className="flex items-center space-x-4">
+          <div className="bg-white p-1 rounded">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-8 w-8 text-primary-700"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+              />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">Deep Researcher</h1>
+            <p className="text-xs text-primary-100">Web Research Assistant</p>
+          </div>
+        </div>
+        <nav>
+          <ul className="flex space-x-4">
+            <li>
+              <a
+                href="https://github.com/yourusername/deep-researcher"
+                className="text-white hover:text-primary-200 transition"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+</file>
+
+<file path="src/ui/src/components/layout/Header.tsx">
+interface HeaderProps {
+  title?: string;
+}
+
+export function Header({ title = "AI Secretary" }: HeaderProps) {
+  return (
+    <>
+      <div
+        className="offline-banner text-white text-center py-1 text-sm hidden"
+        id="offlineBanner"
+      >
+        <i className="fas fa-wifi-slash mr-1"></i> Working offline - some
+        features limited
+      </div>
+
+      <header className="bg-blue-600 text-white p-4 shadow-md">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+              <i className="fas fa-robot"></i>
+            </div>
+            <h1 className="text-xl font-bold">{title}</h1>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              className="material-ripple p-2 rounded-full hover:bg-blue-500 transition"
+              aria-label="Search"
+              title="Search"
+            >
+              <i className="fas fa-search"></i>
+            </button>
+            <button
+              className="material-ripple p-2 rounded-full hover:bg-blue-500 transition"
+              aria-label="Menu"
+              title="Menu"
+            >
+              <i className="fas fa-ellipsis-vertical"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+    </>
+  );
+}
+</file>
+
+<file path="src/ui/src/components/ResearchForm.tsx">
+import React, { useState } from "react";
+
+interface ResearchFormProps {
+  onSubmit: (topic: string) => void;
+  isResearching: boolean;
+}
+
+const ResearchForm: React.FC<ResearchFormProps> = ({
+  onSubmit,
+  isResearching,
+}) => {
+  const [topic, setTopic] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (topic.trim() && !isResearching) {
+      onSubmit(topic);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-8">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <label
+          htmlFor="research-topic"
+          className="block text-sm font-medium text-gray-700 mb-2"
+        >
+          What would you like to research?
+        </label>
+
+        <div className="mt-1 flex rounded-md shadow-sm">
+          <input
+            type="text"
+            id="research-topic"
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm p-3 border"
+            placeholder="Enter a research topic or question..."
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            disabled={isResearching}
+          />
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <button
+            type="submit"
+            disabled={!topic.trim() || isResearching}
+            className={`
+              inline-flex items-center rounded-md border border-transparent px-4 py-2 text-sm font-medium shadow-sm
+              ${
+                !topic.trim() || isResearching
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              }
+            `}
+          >
+            {isResearching ? (
+              <>
+                <svg
+                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                Researching...
+              </>
+            ) : (
+              "Start Research"
+            )}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+};
+
+export default ResearchForm;
+</file>
+
+<file path="src/ui/src/components/ResearchResults.tsx">
+import React from "react";
+import { ResearchResults as ResearchResultsType } from "../types";
+
+interface ResearchResultsProps {
+  results: ResearchResultsType | null;
+  isLoading: boolean;
+}
+
+const ResearchResults: React.FC<ResearchResultsProps> = ({
+  results,
+  isLoading,
+}) => {
+  if (isLoading) {
+    return (
+      <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+        <div className="animate-pulse">
+          <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-5/6 mb-6"></div>
+
+          <div className="h-5 bg-gray-200 rounded w-1/3 mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-4/6"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!results) {
+    return null;
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-xl font-bold mb-4">Research Summary</h2>
+        <div className="prose prose-sm max-w-none">
+          {results.summary.split("\n").map((paragraph, i) =>
+            paragraph ? (
+              <p key={i} className="mb-4">
+                {paragraph}
+              </p>
+            ) : null,
+          )}
+        </div>
+      </div>
+
+      {results.sources.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-bold mb-4">Sources</h2>
+          <ul className="space-y-4">
+            {results.sources.map((source, index) => (
+              <li
+                key={index}
+                className="border-b border-gray-100 pb-4 last:border-0 last:pb-0"
+              >
+                <h3 className="font-medium text-blue-600">
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {source.title || source.url}
+                  </a>
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">{source.snippet}</p>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-gray-500 hover:text-gray-700 mt-1 inline-block"
+                >
+                  {source.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ResearchResults;
+</file>
+
+<file path="src/ui/src/main.tsx">
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { App } from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+</file>
+
+<file path="src/ui/src/pages/Architecture.tsx">
+import React from "react";
+
+const Architecture: React.FC = () => {
+  return (
+    <div className="max-w-6xl mx-auto p-4">
+      <h1 className="text-3xl font-bold mb-4">Architecture</h1>
+      <p>This is the placeholder for the Architecture documentation page.</p>
+      {/* Content for the architecture page will go here */}
+    </div>
+  );
+};
+
+export default Architecture;
+</file>
+
+<file path="src/ui/src/pages/Docs.tsx">
+import React, { useEffect, useState } from "react";
+
+// FontAwesome icons replacement with inline SVGs
+const FileCodeIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 384 512"
+  >
+    <path
+      fill="currentColor"
+      d="M149.9 349.1l-.2-.2-32.8-28.9 32.8-28.9c3.6-3.2 4-8.8.8-12.4l-.2-.2-17.4-18.6c-3.4-3.6-9-3.7-12.4-.4l-57.7 54.1c-3.7 3.5-3.7 9.4 0 12.8l57.7 54.1c1.6 1.5 3.8 2.4 6 2.4 2.4 0 4.8-1 6.4-2.8l17.4-18.6c3.3-3.5 3.1-9.1-.4-12.4zm220-251.2L286 14C277 5 264.8-.1 252.1-.1H48C21.5 0 0 21.5 0 48v416c0 26.5 21.5 48 48 48h288c26.5 0 48-21.5 48-48V131.9c0-12.7-5.1-25-14.1-34zM256 51.9l76.1 76.1H256zM336 464H48V48h160v104c0 13.3 10.7 24 24 24h104zM209.6 214c-4.7-1.4-9.5 1.3-10.9 6L144 408.1c-1.4 4.7 1.3 9.6 6 10.9l24.4 7.1c4.7 1.4 9.6-1.4 10.9-6L240 231.9c1.4-4.7-1.3-9.6-6-10.9zm24.5 76.9l.2.2 32.8 28.9-32.8 28.9c-3.6 3.2-4 8.8-.8 12.4l.2.2 17.4 18.6c3.3 3.5 8.9 3.7 12.4.4l57.7-54.1c3.7-3.5 3.7-9.4 0-12.8l-57.7-54.1c-3.5-3.3-9.1-3.1-12.4.4l-17.4 18.6c-3.3 3.5-3.1 9.1.4 12.4z"
+    />
+  </svg>
+);
+
+const SitemapIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 576 512"
+  >
+    <path
+      fill="currentColor"
+      d="M128 352H32c-17.67 0-32 14.33-32 32v96c0 17.67 14.33 32 32 32h96c17.67 0 32-14.33 32-32v-96c0-17.67-14.33-32-32-32zm-24-80h192v48h48v-48h192v48h48v-57.59c0-21.17-17.23-38.41-38.41-38.41H344v-64h40c17.67 0 32-14.33 32-32V32c0-17.67-14.33-32-32-32H192c-17.67 0-32 14.33-32 32v96c0 17.67 14.33 32 32 32h40v64H94.41C73.23 224 56 241.23 56 262.41V320h48zm264 80h-96c-17.67 0-32 14.33-32 32v96c0 17.67 14.33 32 32 32h96c17.67 0 32-14.33 32-32v-96c0-17.67-14.33-32-32-32zm240 0h-96c-17.67 0-32 14.33-32 32v96c0 17.67 14.33 32 32 32h96c17.67 0 32-14.33 32-32v-96c0-17.67-14.33-32-32-32z"
+    />
+  </svg>
+);
+
+const BookIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 448 512"
+  >
+    <path
+      fill="currentColor"
+      d="M448 360V24c0-13.3-10.7-24-24-24H96C43 0 0 43 0 96v320c0 53 43 96 96 96h328c13.3 0 24-10.7 24-24v-16c0-7.5-3.5-14.3-8.9-18.7-4.2-15.4-4.2-59.3 0-74.7 5.4-4.3 8.9-11.1 8.9-18.6zM128 134c0-3.3 2.7-6 6-6h212c3.3 0 6 2.7 6 6v20c0 3.3-2.7 6-6 6H134c-3.3 0-6-2.7-6-6v-20zm0 64c0-3.3 2.7-6 6-6h212c3.3 0 6 2.7 6 6v20c0 3.3-2.7 6-6 6H134c-3.3 0-6-2.7-6-6v-20zm253.4 250H96c-17.7 0-32-14.3-32-32 0-17.6 14.4-32 32-32h285.4c-1.9 17.1-1.9 46.9 0 64z"
+    />
+  </svg>
+);
+
+const ExternalLinkIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M432 320h-32a16 16 0 0 0-16 16v112H64V128h144a16 16 0 0 0 16-16V80a16 16 0 0 0-16-16H48a48 48 0 0 0-48 48v352a48 48 0 0 0 48 48h352a48 48 0 0 0 48-48V336a16 16 0 0 0-16-16zM488 0H360c-21.37 0-32.05 25.91-17 41l35.73 35.73L135 320.37a24 24 0 0 0 0 34L157.67 377a24 24 0 0 0 34 0l243.61-243.68L471 169c15 15 41 4.5 41-17V24a24 24 0 0 0-24-24z"
+    />
+  </svg>
+);
+
+const BookOpenIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 576 512"
+  >
+    <path
+      fill="currentColor"
+      d="M542.22 32.05c-54.8 3.11-163.72 14.43-230.96 55.59-4.64 2.84-7.27 7.89-7.27 13.17v363.87c0 11.55 12.63 18.85 23.28 13.49 69.18-34.82 169.23-44.32 218.7-46.92 16.89-.89 30.02-14.43 30.02-30.66V62.75c.01-17.71-15.35-31.74-33.77-30.7zM264.73 87.64C197.5 46.48 88.58 35.17 33.78 32.05 15.36 31.01 0 45.04 0 62.75V400.6c0 16.24 13.13 29.78 30.02 30.66 49.49 2.6 149.59 12.11 218.77 46.95 10.62 5.35 23.21-1.94 23.21-13.46V100.63c0-5.29-2.62-10.14-7.27-12.99z"
+    />
+  </svg>
+);
+
+const Docs: React.FC = () => {
+  const [lastBuildTime, setLastBuildTime] = useState("2 minutes ago");
+
+  useEffect(() => {
+    // Simulate CI build updates
+    const interval = setInterval(() => {
+      const times = [
+        "Just now",
+        "1 minute ago",
+        "2 minutes ago",
+        "5 minutes ago",
+      ];
+      setLastBuildTime(times[Math.floor(Math.random() * times.length)]);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">TaskFlow</h1>
+          <p className="text-gray-600">Documentation Dashboard</p>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg shadow-sm">
+              <div className="pulse text-blue-500">⬤</div>
+              <span className="text-sm font-medium">CI Running</span>
+            </div>
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-xs text-gray-500">
+              Last build: <span>{lastBuildTime}</span>
+            </div>
+          </div>
+          <div className="bg-white p-2 rounded-full shadow-sm">
+            <img
+              src="https://ui-avatars.com/api/?name=Dev+Team"
+              alt="Team"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* Documentation */}
+      <section>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Documentation</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* API Docs */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden lg:col-span-2">
+            <div className="px-6 py-4 border-b border-gray-100 bg-red-50">
+              <h3 className="text-lg font-semibold text-red-800 flex items-center">
+                <FileCodeIcon />
+                API Documentation
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h4 className="font-medium mb-2">Swagger/OpenAPI 3.1</h4>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    GET /tasks
+                  </span>
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    POST /tasks
+                  </span>
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    GET /calendar
+                  </span>
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    POST /assistant/fncall
+                  </span>
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    POST /sync/tasks
+                  </span>
+                </div>
+                <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                  <pre className="text-xs text-gray-800">
+                    {`// Example API call
+fetch('/api/tasks', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ lastSyncedAt: '2023-11-15T12:00:00Z' })
+})`}
+                  </pre>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-gray-100">
+                <a
+                  href="#"
+                  className="text-sm font-medium text-red-600 hover:text-red-800 flex items-center"
+                >
+                  <ExternalLinkIcon />
+                  View API Documentation
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Architecture */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-indigo-50">
+              <h3 className="text-lg font-semibold text-indigo-800 flex items-center">
+                <SitemapIcon />
+                Architecture
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h4 className="font-medium mb-2">System Components</h4>
+                <ul className="text-sm space-y-2">
+                  <li className="flex items-center">
+                    <span className="text-indigo-500 mr-2">📱</span>
+                    Flutter UI (Web/Mobile)
+                  </li>
+                  <li className="flex items-center">
+                    <span className="text-indigo-500 mr-2">🔄</span>
+                    Riverpod State Management
+                  </li>
+                  <li className="flex items-center">
+                    <span className="text-indigo-500 mr-2">🗄️</span>
+                    Drift Local DB
+                  </li>
+                  <li className="flex items-center">
+                    <span className="text-indigo-500 mr-2">☁️</span>
+                    Supabase Edge Functions
+                  </li>
+                  <li className="flex items-center">
+                    <span className="text-indigo-500 mr-2">🤖</span>
+                    OpenAI LLM Integration
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-4 border-t border-gray-100">
+                <a
+                  href="#"
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-800 flex items-center"
+                >
+                  <BookOpenIcon />
+                  View Architecture Diagrams
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* README */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden lg:col-span-3">
+            <div className="px-6 py-4 border-b border-gray-100 bg-green-50">
+              <h3 className="text-lg font-semibold text-green-800 flex items-center">
+                <BookIcon />
+                Project README
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <h4 className="font-medium mb-2">Getting Started</h4>
+                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                    <pre className="text-xs text-gray-800">
+                      {`# Clone the repo
+git clone https://github.com/yourrepo/taskflow.git
+
+# Install dependencies
+flutter pub get
+
+# Run the app
+flutter run`}
+                    </pre>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-medium mb-2">Testing</h4>
+                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                    <pre className="text-xs text-gray-800">
+                      {`# Run unit tests
+flutter test
+
+# Run integration tests
+flutter test integration_test
+
+# Run E2E tests
+flutter drive --target=test_driver/app.dart`}
+                    </pre>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-medium mb-2">Deployment</h4>
+                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                    <pre className="text-xs text-gray-800">
+                      {`# Build for web
+flutter build web
+
+# Deploy to Vercel
+vercel --prod
+
+# Deploy Supabase
+supabase deploy`}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Docs;
+</file>
+
+<file path="src/ui/src/pages/Performance.tsx">
+import React, { useEffect, useState } from "react";
+
+// SVG icons as components
+const MobileScreenIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 384 512"
+  >
+    <path
+      fill="currentColor"
+      d="M16 64C16 28.7 44.7 0 80 0H304c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H80c-35.3 0-64-28.7-64-64V64zM224 448a32 32 0 1 0 -64 0 32 32 0 1 0 64 0zM304 64H80V384H304V64z"
+    />
+  </svg>
+);
+
+const ServerIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M64 32C28.7 32 0 60.7 0 96v64c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zm280 72a24 24 0 1 1 0 48 24 24 0 1 1 0-48zm48 24a24 24 0 1 1 48 0 24 24 0 1 1 -48 0zM64 288c-35.3 0-64 28.7-64 64v64c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V352c0-35.3-28.7-64-64-64H64zm280 72a24 24 0 1 1 0 48 24 24 0 1 1 0-48zm56 24a24 24 0 1 1 48 0 24 24 0 1 1 -48 0z"
+    />
+  </svg>
+);
+
+const CodeIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 640 512"
+  >
+    <path
+      fill="currentColor"
+      d="M392.8 1.2c-17-4.9-34.7 5-39.6 22l-128 448c-4.9 17 5 34.7 22 39.6s34.7-5 39.6-22l128-448c4.9-17-5-34.7-22-39.6zm-209.4 55.4c-15.7 8.3-21.9 27.8-13.6 43.5l88.3 166.3-88.3 166.3c-8.3 15.7-2.1 35.2 13.6 43.5s35.2 2.1 43.5-13.6L344.7 288 227.1 113.1c-8.3-15.7-27.8-21.9-43.5-13.6zM496.8 430.2c8.3 15.7 27.8 21.9 43.5 13.6s21.9-27.8 13.6-43.5L465.6 234l88.3-166.3c8.3-15.7 2.1-35.2-13.6-43.5s-35.2-2.1-43.5 13.6L379.3 212.8 496.8 387.7c8.3 15.7 8.3 27.9 0 42.5z"
+    />
+  </svg>
+);
+
+interface TechBadgeProps {
+  color: string;
+  children: React.ReactNode;
+}
+
+const TechBadge: React.FC<TechBadgeProps> = ({ color, children }) => (
+  <span
+    className={`tech-badge bg-${color}-100 text-${color}-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200`}
+  >
+    {children}
+  </span>
+);
+
+interface ProgressBarProps {
+  percentage: number;
+  label: string;
+  value: string;
+  color: string;
+}
+
+const ProgressBar: React.FC<ProgressBarProps> = ({
+  percentage,
+  label,
+  value,
+  color,
+}) => (
+  <div>
+    <div className="flex justify-between mb-1">
+      <span className="text-sm font-medium">{label}</span>
+      <span className="text-sm font-medium">{value}</span>
+    </div>
+    <div className="progress-bar bg-gray-200">
+      <div
+        className={`progress-fill bg-${color}-500`}
+        style={{
+          width: `${percentage}%`,
+          height: "8px",
+          borderRadius: "4px",
+          transition: "width 0.5s ease",
+        }}
+      ></div>
+    </div>
+  </div>
+);
+
+const Performance: React.FC = () => {
+  const [lastBuildTime, setLastBuildTime] = useState("2 minutes ago");
+
+  useEffect(() => {
+    // Simulate CI build updates
+    const interval = setInterval(() => {
+      const times = [
+        "Just now",
+        "1 minute ago",
+        "2 minutes ago",
+        "5 minutes ago",
+      ];
+      setLastBuildTime(times[Math.floor(Math.random() * times.length)]);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">TaskFlow</h1>
+          <p className="text-gray-600">Performance Optimization Dashboard</p>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg shadow-sm">
+              <div className="pulse text-blue-500">⬤</div>
+              <span className="text-sm font-medium">CI Running</span>
+            </div>
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-xs text-gray-500">
+              Last build: <span>{lastBuildTime}</span>
+            </div>
+          </div>
+          <div className="bg-white p-2 rounded-full shadow-sm">
+            <img
+              src="https://ui-avatars.com/api/?name=Dev+Team"
+              alt="Team"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* Performance Metrics */}
+      <section className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Performance Metrics
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Frontend */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
+              <h3 className="text-lg font-semibold text-blue-800 flex items-center">
+                <MobileScreenIcon />
+                Frontend Optimization
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <ProgressBar
+                label="Code Splitting"
+                value="100%"
+                percentage={100}
+                color="blue"
+              />
+              <ProgressBar
+                label="List Virtualization"
+                value="100%"
+                percentage={100}
+                color="blue"
+              />
+              <ProgressBar
+                label="Asset Optimization"
+                value="85%"
+                percentage={85}
+                color="blue"
+              />
+              <div className="pt-4">
+                <h4 className="text-sm font-medium mb-2">Technologies</h4>
+                <div className="flex flex-wrap gap-2">
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Flutter Web
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    ListView.builder
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    SVG Assets
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Tree Shaking
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Backend */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-emerald-50">
+              <h3 className="text-lg font-semibold text-emerald-800 flex items-center">
+                <ServerIcon />
+                Backend Optimization
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <ProgressBar
+                label="Cold Start Time"
+                value="300ms"
+                percentage={90}
+                color="emerald"
+              />
+              <ProgressBar
+                label="Query Performance"
+                value="95%"
+                percentage={95}
+                color="emerald"
+              />
+              <ProgressBar
+                label="Rate Limiting"
+                value="100%"
+                percentage={100}
+                color="emerald"
+              />
+              <div className="pt-4">
+                <h4 className="text-sm font-medium mb-2">Technologies</h4>
+                <div className="flex flex-wrap gap-2">
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Supabase
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Edge Functions
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Postgres Indexes
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Warm Containers
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* API */}
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
+              <h3 className="text-lg font-semibold text-amber-800 flex items-center">
+                <CodeIcon />
+                API Optimization
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <ProgressBar
+                label="Payload Size"
+                value="2.5KB avg"
+                percentage={88}
+                color="amber"
+              />
+              <ProgressBar
+                label="Pagination"
+                value="100%"
+                percentage={100}
+                color="amber"
+              />
+              <ProgressBar
+                label="Batch Updates"
+                value="92%"
+                percentage={92}
+                color="amber"
+              />
+              <div className="pt-4">
+                <h4 className="text-sm font-medium mb-2">Technologies</h4>
+                <div className="flex flex-wrap gap-2">
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    GraphQL
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Cursor Pagination
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    GZIP Compression
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    CDN Caching
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Performance;
+</file>
+
+<file path="src/ui/src/pages/Testing.tsx">
+import React, { useEffect, useState } from "react";
+
+// SVG icons as components for better maintainability
+const VialIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M234.5 5.7c13.9-5 29.1-5 43.1 0l192 68.6C495 83.4 512 107.5 512 134.6V377.4c0 27-17 51.2-42.5 60.3l-192 68.6c-13.9 5-29.1 5-43.1 0l-192-68.6C17 428.6 0 404.5 0 377.4V134.6c0-27 17-51.2 42.5-60.3l192-68.6zM256 66L82.3 128 256 190l173.7-62L256 66zm32 368.6l160-57.1v-188L288 246.6v188z"
+    />
+  </svg>
+);
+
+const PuzzleIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M308.5 135.3c7.1-6.3 9.9-16.2 6.2-25c-2.3-5.3-4.8-10.5-7.6-15.5L304 89.4c-3-5-6.3-9.9-9.8-14.6c-5.7-7.6-15.7-10.1-24.7-7.1l-28.2 9.3c-10.7-8.8-23-16-36.2-20.9L199 27.1c-1.9-9.3-9.1-16.7-18.5-17.8C173.9 8.4 167.2 8 160.4 8h-.7c-6.8 0-13.5 .4-20.1 1.2c-9.4 1.1-16.6 8.6-18.5 17.8L115 56.1c-13.3 5-25.5 12.1-36.2 20.9L50.5 67.8c-9-3-19-.5-24.7 7.1c-3.5 4.7-6.8 9.6-9.9 14.6l-3 5.3c-2.8 5-5.3 10.2-7.6 15.6c-3.7 8.7-.9 18.6 6.2 25l22.2 19.8C32.6 161.9 32 168.9 32 176s.6 14.1 1.7 20.9L11.5 216.7c-7.1 6.3-9.9 16.2-6.2 25c2.3 5.3 4.8 10.5 7.6 15.6l3 5.2c3 5.1 6.3 9.9 9.9 14.6c5.7 7.6 15.7 10.1 24.7 7.1l28.2-9.3c10.7 8.8 23 16 36.2 20.9l6.1 29.1c1.9 9.3 9.1 16.7 18.5 17.8c6.7 .8 13.5 1.2 20.4 1.2s13.7-.4 20.4-1.2c9.4-1.1 16.6-8.6 18.5-17.8l6.1-29.1c13.3-5 25.5-12.1 36.2-20.9l28.2 9.3c9 3 19 .5 24.7-7.1c3.5-4.7 6.8-9.5 9.8-14.6l3.1-5.4c2.8-5 5.3-10.2 7.6-15.5c3.7-8.7 .9-18.6-6.2-25l-22.2-19.8c1.1-6.8 1.7-13.8 1.7-20.9s-.6-14.1-1.7-20.9l22.2-19.8zM112 176a48 48 0 1 1 96 0 48 48 0 1 1 -96 0zM504.7 500.5c6.3 7.1 16.2 9.9 25 6.2c5.3-2.3 10.5-4.8 15.5-7.6l5.4-3.1c5-3 9.9-6.3 14.6-9.8c7.6-5.7 10.1-15.7 7.1-24.7l-9.3-28.2c8.8-10.7 16-23 20.9-36.2l29.1-6.1c9.3-1.9 16.7-9.1 17.8-18.5c.8-6.7 1.2-13.5 1.2-20.4s-.4-13.7-1.2-20.4c-1.1-9.4-8.6-16.6-17.8-18.5L583.1 307c-5-13.3-12.1-25.5-20.9-36.2l9.3-28.2c3-9 .5-19-7.1-24.7c-4.7-3.5-9.6-6.8-14.6-9.9l-5.3-3c-5-2.8-10.2-5.3-15.6-7.6c-8.7-3.7-18.6-.9-25 6.2l-19.8 22.2c-6.8-1.1-13.8-1.7-20.9-1.7s-14.1 .6-20.9 1.7l-19.8-22.2c-6.3-7.1-16.2-9.9-25-6.2c-5.3 2.3-10.5 4.8-15.6 7.6l-5.2 3c-5.1 3-9.9 6.3-14.6 9.9c-7.6 5.7-10.1 15.7-7.1 24.7l9.3 28.2c-8.8 10.7-16 23-20.9 36.2L315.1 313c-9.3 1.9-16.7 9.1-17.8 18.5c-.8 6.7-1.2 13.5-1.2 20.4s.4 13.7 1.2 20.4c1.1 9.4 8.6 16.6 17.8 18.5l29.1 6.1c5 13.3 12.1 25.5 20.9 36.2l-9.3 28.2c-3 9-.5 19 7.1 24.7c4.7 3.5 9.5 6.8 14.6 9.8l5.4 3.1c5 2.8 10.2 5.3 15.5 7.6c8.7 3.7 18.6 .9 25-6.2l19.8-22.2c6.8 1.1 13.8 1.7 20.9 1.7s14.1-.6 20.9-1.7l19.8 22.2zM464 400a48 48 0 1 1 0-96 48 48 0 1 1 0 96z"
+    />
+  </svg>
+);
+
+const ProjectDiagramIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 640 512"
+  >
+    <path
+      fill="currentColor"
+      d="M384 320c-17.7 0-32 14.3-32 32v32c0 17.7 14.3 32 32 32h32c17.7 0 32-14.3 32-32V352c0-17.7-14.3-32-32-32H384zm160-160c-17.7 0-32 14.3-32 32v32c0 17.7 14.3 32 32 32h32c17.7 0 32-14.3 32-32V192c0-17.7-14.3-32-32-32H544zM128 360c0 13.3-10.7 24-24 24s-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24zm328-24h-32c-35.3 0-64 28.7-64 64v32c0 35.3 28.7 64 64 64h32c35.3 0 64-28.7 64-64V400c0-35.3-28.7-64-64-64zM440 80c0 13.3-10.7 24-24 24s-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24zM136 88c-13.3 0-24 10.7-24 24v48h48c35.3 0 64 28.7 64 64v112c0 35.3-28.7 64-64 64H24c-13.3 0-24-10.7-24-24s10.7-24 24-24H160c8.8 0 16-7.2 16-16V224c0-8.8-7.2-16-16-16H24c-13.3 0-24-10.7-24-24s10.7-24 24-24H96V112c0-35.3 28.7-64 64-64h224c35.3 0 64 28.7 64 64v48h32c35.3 0 64 28.7 64 64v32c0 35.3-28.7 64-64 64H448c-13.3 0-24-10.7-24-24s10.7-24 24-24h96c8.8 0 16-7.2 16-16V224c0-8.8-7.2-16-16-16H416c-13.3 0-24-10.7-24-24s10.7-24 24-24h32V112c0-8.8-7.2-16-16-16H384 360c-13.3 0-24-10.7-24-24s10.7-24 24-24h24c35.3 0 64 28.7 64 64v48h32c13.3 0 24 10.7 24 24s-10.7 24-24 24z"
+    />
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg
+    className="w-4 h-4 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M505 442.7L405.3 343c-4.5-4.5-10.6-7-17-7H372c27.6-35.3 44-79.7 44-128C416 93.1 322.9 0 208 0S0 93.1 0 208s93.1 208 208 208c48.3 0 92.7-16.4 128-44v16.3c0 6.4 2.5 12.5 7 17l99.7 99.7c9.4 9.4 24.6 9.4 33.9 0l28.3-28.3c9.4-9.4 9.4-24.6.1-34zM208 336c-70.7 0-128-57.2-128-128 0-70.7 57.2-128 128-128 70.7 0 128 57.2 128 128 0 70.7-57.2 128-128 128z"
+    />
+  </svg>
+);
+
+// Fixed CheckCircleIcon to accept className as a prop
+interface IconProps {
+  className?: string;
+}
+
+const CheckCircleIcon: React.FC<IconProps> = ({ className }) => (
+  <svg
+    className={`w-3 h-3 mr-1 ${className || ""}`}
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M256 8C119.033 8 8 119.033 8 256s111.033 248 248 248 248-111.033 248-248S392.967 8 256 8zm0 48c110.532 0 200 89.451 200 200 0 110.532-89.451 200-200 200-110.532 0-200-89.451-200-200 0-110.532 89.451-200 200-200m140.204 130.267l-22.536-22.718c-4.667-4.705-12.265-4.736-16.97-.068L215.346 303.697l-59.792-60.277c-4.667-4.705-12.265-4.736-16.97-.069l-22.719 22.536c-4.705 4.667-4.736 12.265-.068 16.971l90.781 91.516c4.667 4.705 12.265 4.736 16.97.068l172.589-171.204c4.704-4.668 4.734-12.266.067-16.971z"
+    />
+  </svg>
+);
+
+const Testing: React.FC = () => {
+  const [lastBuildTime, setLastBuildTime] = useState("2 minutes ago");
+
+  useEffect(() => {
+    // Simulate CI build updates
+    const interval = setInterval(() => {
+      const times = [
+        "Just now",
+        "1 minute ago",
+        "2 minutes ago",
+        "5 minutes ago",
+      ];
+      setLastBuildTime(times[Math.floor(Math.random() * times.length)]);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">TaskFlow</h1>
+          <p className="text-gray-600">Testing Dashboard</p>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg shadow-sm">
+              <div className="pulse text-blue-500">⬤</div>
+              <span className="text-sm font-medium">CI Running</span>
+            </div>
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-xs text-gray-500">
+              Last build: <span>{lastBuildTime}</span>
+            </div>
+          </div>
+          <div className="bg-white p-2 rounded-full shadow-sm">
+            <img
+              src="https://ui-avatars.com/api/?name=Dev+Team"
+              alt="Team"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* Testing Plan */}
+      <section className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Testing Strategy
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Unit Tests */}
+          <div className="test-card bg-white rounded-lg shadow-sm overflow-hidden hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+            <div className="px-4 py-3 border-b border-gray-100 bg-purple-50">
+              <h3 className="font-semibold text-purple-800 flex items-center">
+                <VialIcon />
+                Unit Tests
+              </h3>
+            </div>
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Coverage</span>
+                <span className="text-sm font-bold text-purple-600">92%</span>
+              </div>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>
+                  <CheckCircleIcon className="text-purple-500" />
+                  Riverpod providers
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-purple-500" />
+                  Model validation
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-purple-500" />
+                  Sync logic
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-purple-500" />
+                  Utility functions
+                </p>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                  flutter_test
+                </span>
+                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded ml-1">
+                  mockito
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Integration Tests */}
+          <div className="test-card bg-white rounded-lg shadow-sm overflow-hidden hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+            <div className="px-4 py-3 border-b border-gray-100 bg-blue-50">
+              <h3 className="font-semibold text-blue-800 flex items-center">
+                <PuzzleIcon />
+                Integration Tests
+              </h3>
+            </div>
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Coverage</span>
+                <span className="text-sm font-bold text-blue-600">85%</span>
+              </div>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>
+                  <CheckCircleIcon className="text-blue-500" />
+                  Widget + API interaction
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-blue-500" />
+                  Local DB operations
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-blue-500" />
+                  Offline sync
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-blue-500" />
+                  Task CRUD flows
+                </p>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                  integration_test
+                </span>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded ml-1">
+                  drift_test
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* E2E Tests */}
+          <div className="test-card bg-white rounded-lg shadow-sm overflow-hidden hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+            <div className="px-4 py-3 border-b border-gray-100 bg-emerald-50">
+              <h3 className="font-semibold text-emerald-800 flex items-center">
+                <ProjectDiagramIcon />
+                E2E Tests
+              </h3>
+            </div>
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Coverage</span>
+                <span className="text-sm font-bold text-emerald-600">78%</span>
+              </div>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>
+                  <CheckCircleIcon className="text-emerald-500" />
+                  Onboarding flow
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-emerald-500" />
+                  AI chat → task
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-emerald-500" />
+                  Cross-device UI
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-emerald-500" />
+                  Performance metrics
+                </p>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded">
+                  Flutter Driver
+                </span>
+                <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded ml-1">
+                  Firebase Test Lab
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Exploratory */}
+          <div className="test-card bg-white rounded-lg shadow-sm overflow-hidden hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+            <div className="px-4 py-3 border-b border-gray-100 bg-amber-50">
+              <h3 className="font-semibold text-amber-800 flex items-center">
+                <SearchIcon />
+                Exploratory
+              </h3>
+            </div>
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Coverage</span>
+                <span className="text-sm font-bold text-amber-600">
+                  Ongoing
+                </span>
+              </div>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>
+                  <CheckCircleIcon className="text-amber-500" />
+                  Error boundaries
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-amber-500" />
+                  Offline edge cases
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-amber-500" />
+                  Visual consistency
+                </p>
+                <p>
+                  <CheckCircleIcon className="text-amber-500" />
+                  Stress testing
+                </p>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                  TestRail
+                </span>
+                <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded ml-1">
+                  BrowserStack
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Testing;
+</file>
+
+<file path="src/ui/src/pages/ThirdPartyLibraries.tsx">
+import React, { useEffect, useState } from "react";
+
+// SVG icons as components
+const MobileScreenIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 384 512"
+  >
+    <path
+      fill="currentColor"
+      d="M16 64C16 28.7 44.7 0 80 0H304c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H80c-35.3 0-64-28.7-64-64V64zM224 448a32 32 0 1 0 -64 0 32 32 0 1 0 64 0zM304 64H80V384H304V64z"
+    />
+  </svg>
+);
+
+const ServerIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 512 512"
+  >
+    <path
+      fill="currentColor"
+      d="M64 32C28.7 32 0 60.7 0 96v64c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zm280 72a24 24 0 1 1 0 48 24 24 0 1 1 0-48zm48 24a24 24 0 1 1 48 0 24 24 0 1 1 -48 0zM64 288c-35.3 0-64 28.7-64 64v64c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V352c0-35.3-28.7-64-64-64H64zm280 72a24 24 0 1 1 0 48 24 24 0 1 1 0-48zm56 24a24 24 0 1 1 48 0 24 24 0 1 1 -48 0z"
+    />
+  </svg>
+);
+
+const CodeBranchIcon = () => (
+  <svg
+    className="w-5 h-5 mr-2"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 448 512"
+  >
+    <path
+      fill="currentColor"
+      d="M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3V192c0 17.7 14.3 32 32 32H304c17.7 0 32-14.3 32-32V153.3C307.7 141 288 112.8 288 80c0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3V192c0 53-43 96-96 96H144c-53 0-96-43-96-96V153.3C19.7 141 0 112.8 0 80C0 35.8 35.8 0 80 0s80 35.8 80 80zM368 80a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm0-104c44.2 0 80 35.8 80 80c0 32.8-19.7 61-48 73.3V488h96c17.7 0 32-14.3 32-32V389.3c-28.3-12.3-48-40.5-48-73.3c0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3V456c0 53-43 96-96 96H112v16c0 22.1-17.9 40-40 40s-40-17.9-40-40V505.3C19.7 493 0 464.8 0 432c0-44.2 35.8-80 80-80zm192 5.3c28.3 12.3 48 40.5 48 73.3c0 13.3-3.2 25.9-8.8 37c26-6.9 45.3-30.3 45.3-58.3c0-33.4-27.1-60.5-60.5-60.5c-28 0-51.4 19.2-58.3 45.3c11.1-5.6 23.7-8.8 37-8.8c32.8 0 61 19.7 73.3 48zM368 456a24 24 0 1 0 -48 0 24 24 0 1 0 48 0z"
+    />
+  </svg>
+);
+
+// Tech badge component
+interface TechBadgeProps {
+  color: string;
+  children: React.ReactNode;
+}
+
+const TechBadge: React.FC<TechBadgeProps> = ({ color, children }) => (
+  <span
+    className={`tech-badge bg-${color}-100 text-${color}-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200`}
+  >
+    {children}
+  </span>
+);
+
+const ThirdPartyLibraries: React.FC = () => {
+  const [lastBuildTime, setLastBuildTime] = useState<string>("2 minutes ago");
+
+  useEffect(() => {
+    // Simulate CI build updates
+    const interval = setInterval(() => {
+      const times = [
+        "Just now",
+        "1 minute ago",
+        "2 minutes ago",
+        "5 minutes ago",
+      ];
+      setLastBuildTime(times[Math.floor(Math.random() * times.length)]);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">TaskFlow</h1>
+          <p className="text-gray-600">Third-Party Libraries Dashboard</p>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg shadow-sm">
+              <div className="pulse text-blue-500">⬤</div>
+              <span className="text-sm font-medium">CI Running</span>
+            </div>
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-xs text-gray-500">
+              Last build: <span>{lastBuildTime}</span>
+            </div>
+          </div>
+          <div className="bg-white p-2 rounded-full shadow-sm">
+            <img
+              src="https://ui-avatars.com/api/?name=Dev+Team"
+              alt="Team"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* Frontend Libraries */}
+      <section className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Frontend Libraries
+        </h2>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
+            <h3 className="text-lg font-semibold text-blue-800 flex items-center">
+              <MobileScreenIcon />
+              UI Libraries
+            </h3>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-3">Core Framework</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Flutter Web
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    ListView.builder
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    SVG Assets
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Tree Shaking
+                  </span>
+                </div>
+
+                <h4 className="font-medium mb-3">Testing Libraries</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    flutter_test
+                  </span>
+                  <span className="tech-badge bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    mockito
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    integration_test
+                  </span>
+                  <span className="tech-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    drift_test
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Flutter Driver
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-3">State Management</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Riverpod State Management
+                  </span>
+                </div>
+
+                <h4 className="font-medium mb-3">Testing Platforms</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Firebase Test Lab
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    TestRail
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    BrowserStack
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Backend Libraries */}
+      <section className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Backend Libraries
+        </h2>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-emerald-50">
+            <h3 className="text-lg font-semibold text-emerald-800 flex items-center">
+              <ServerIcon />
+              Server & Database
+            </h3>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-3">Backend Services</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Supabase
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Edge Functions
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Postgres Indexes
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Warm Containers
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-3">Local Database</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Drift Local DB
+                  </span>
+                </div>
+
+                <h4 className="font-medium mb-3">API Integrations</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    REST API
+                  </span>
+                  <span className="tech-badge bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Differential Sync
+                  </span>
+                  <span className="tech-badge bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    OpenAI LLM Integration
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Development & Deployment */}
+      <section>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          Development & Deployment Tools
+        </h2>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-green-50">
+            <h3 className="text-lg font-semibold text-green-800 flex items-center">
+              <CodeBranchIcon />
+              DevOps Tools
+            </h3>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-3">Source Control & CI/CD</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Git
+                  </span>
+                  <span className="tech-badge bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    GitHub Actions
+                  </span>
+                </div>
+
+                <h4 className="font-medium mb-3">Deployment</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Vercel
+                  </span>
+                  <span className="tech-badge bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Supabase Deploy
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-3">Monitoring & Logging</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Firebase Analytics
+                  </span>
+                  <span className="tech-badge bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Crashlytics
+                  </span>
+                  <span className="tech-badge bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Performance Monitoring
+                  </span>
+                </div>
+
+                <h4 className="font-medium mb-3">Code Quality</h4>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="tech-badge bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Linting
+                  </span>
+                  <span className="tech-badge bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    Code Coverage
+                  </span>
+                  <span className="tech-badge bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs hover:translate-y-[-2px] hover:shadow-md transition-all duration-200">
+                    SonarQube
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default ThirdPartyLibraries;
+</file>
+
+<file path="src/ui/src/types.ts">
+export interface ResearchState {
+  topic: string;
+  isResearching: boolean;
+  results: ResearchResults | null;
+  error: string | null;
+}
+
+export interface ResearchResults {
+  summary: string;
+  sources: ResearchSource[];
+  query: string;
+}
+
+export interface ResearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+</file>
+
+<file path="src/ui/tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+</file>
+
+<file path="src/ui/tsconfig.node.json">
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true
+  },
+  "include": ["vite.config.ts"]
+}
+</file>
+
+<file path="src/ui/vite.config.ts">
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [react()],
+  root: path.join(__dirname, ""),
+  build: {
+    outDir: path.join(__dirname, "../../dist/ui"),
+    emptyOutDir: true,
+  },
+  server: {
+    port: 3000,
+    proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+    },
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+});
+</file>
+
+<file path="langgraph.json">
+{
+  "node_version": "20",
+  "graphs": {
+    "agent": "./src/agent/graph.ts:graph"
+  },
+  "env": ".env",
+  "dependencies": ["."]
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "ollama-deep-researcher",
+  "version": "0.0.1",
+  "description": "Lightweight web research and summarization assistant.",
+  "packageManager": "yarn@4.6.0",
+  "main": "src/agent/graph.ts",
+  "author": "Pascal Euhus <pacoVK>",
+  "license": "Unlicense",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "build:ui": "vite build src/ui",
+    "build:all": "yarn build && yarn build:ui",
+    "clean": "rm -rf dist",
+    "dev:server": "NODE_OPTIONS=\"--loader ts-node/esm --experimental-specifier-resolution=node\" node src/server.ts",
+    "dev:ui": "vite src/ui",
+    "dev": "concurrently \"yarn dev:server\" \"yarn dev:ui\"",
+    "start": "NODE_ENV=production node dist/server.js",
+    "test": "jest --testPathPattern=\\.test\\.ts\\$ --testPathIgnorePatterns=\\.int\\.test\\.ts\\$",
+    "test:int": "jest --testPathPattern=\\.int\\.test\\.ts\\$",
+    "format": "prettier --write .",
+    "lint": "eslint src",
+    "format:check": "prettier --check .",
+    "lint:langgraph-json": "node scripts/checkLanggraphPaths.js",
+    "lint:all": "yarn lint & yarn lint:langgraph-json & yarn format:check",
+    "test:all": "yarn test && yarn test:int && yarn lint:langgraph"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.37",
+    "@langchain/langgraph": "^0.2.43",
+    "@langchain/ollama": "^0.1.5",
+    "@tavily/core": "^0.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.5.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.1.0",
+    "@eslint/js": "^9.9.1",
+    "@tsconfig/recommended": "^1.0.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.11.25",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "@typescript-eslint/eslint-plugin": "^5.59.8",
+    "@typescript-eslint/parser": "^5.59.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.18",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
+    "eslint": "^8.41.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-import": "^2.27.5",
+    "eslint-plugin-no-instanceof": "^1.0.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "eslint-plugin-react": "^7.34.0",
+    "jest": "^29.7.0",
+    "postcss": "^8.4.35",
+    "prettier": "^3.3.3",
+    "tailwindcss": "^3.4.1",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.5"
+  }
+}
+</file>
+
+<file path="src/agent/graph.ts">
+import { END, START, StateGraph } from "@langchain/langgraph";
+import { StateAnnotation } from "./state";
+import { generateQuery } from "../nodes/generateQuery";
+import { webResearch } from "../nodes/webResearch";
+import { summarizeSources } from "../nodes/summarizeSources";
+import { reflectOnSummary } from "../nodes/reflectSummary";
+import { finalizeSummary } from "../nodes/finalizeSummary";
+import { routeResearch } from "../route/research";
+
+const builder = new StateGraph(StateAnnotation)
+  .addNode("generateQuery", generateQuery)
+  .addNode("webResearch", webResearch)
+  .addNode("summarizeSources", summarizeSources)
+  .addNode("reflectOnSummary", reflectOnSummary)
+  .addNode("finalizeSummary", finalizeSummary)
+
+  .addEdge(START, "generateQuery")
+  .addEdge("generateQuery", "webResearch")
+  .addEdge("webResearch", "summarizeSources")
+  .addEdge("summarizeSources", "reflectOnSummary")
+  .addConditionalEdges("reflectOnSummary", routeResearch)
+  .addEdge("finalizeSummary", END);
+
+export const graph = builder.compile();
+
+graph.name = "Deep Researcher";
+</file>
+
+<file path="src/agent/state.ts">
+import { Annotation } from "@langchain/langgraph";
+
+export type SummaryState = typeof StateAnnotation.State;
+
+export const StateAnnotation = Annotation.Root({
+  researchTopic: Annotation<string>,
+  searchQuery: Annotation<string>,
+  webResearchResults: Annotation<string[]>({
+    reducer: (state, update) => state.concat(update),
+    default: () => [],
+  }),
+  sourcesGathered: Annotation<string[]>({
+    reducer: (state, update) => state.concat(update),
+    default: () => [],
+  }),
+  researchLoopCount: Annotation<number>,
+  runningSummary: Annotation<string>,
+});
+</file>
+
+<file path="src/nodes/finalizeSummary.ts">
+import { SummaryState } from "../agent/state";
+
+export const finalizeSummary = (state: SummaryState) => {
+  const allSources = state.sourcesGathered
+    .map((source) => `* ${source}`)
+    .join("\n");
+  state.runningSummary = `## Summary
+    
+${state.runningSummary}
+    
+### Sources:
+${allSources}`;
+  return { runningSummary: state.runningSummary };
+};
+</file>
+
+<file path="src/nodes/generateQuery.ts">
+import { RunnableConfig } from "@langchain/core/runnables";
+import { ensureConfiguration } from "../agent/configuration";
+import { queryWriterInstructions } from "../agent/prompts";
+import { ChatOllama } from "@langchain/ollama";
+import { SummaryState } from "../agent/state";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+export const generateQuery = async (
+  state: SummaryState,
+  config: RunnableConfig,
+) => {
+  //  Generate a query for web search
+  const configuration = ensureConfiguration(config);
+  const llm = new ChatOllama({
+    model: configuration.localLlm,
+    format: "json",
+    temperature: 0,
+    baseUrl: configuration.localLlmBaseUrl,
+  });
+
+  const result = await llm.invoke([
+    new SystemMessage(queryWriterInstructions(state.researchTopic)),
+    new HumanMessage("Generate a query for web search:"),
+  ]);
+  return { searchQuery: JSON.parse(result.content as string).query };
+};
+</file>
+
+<file path="src/nodes/reflectSummary.ts">
+import { SummaryState } from "../agent/state";
+import { RunnableConfig } from "@langchain/core/runnables";
+import { ensureConfiguration } from "../agent/configuration";
+import { ChatOllama } from "@langchain/ollama";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { reflectionInstructions } from "../agent/prompts";
+
+export const reflectOnSummary = async (
+  state: SummaryState,
+  config: RunnableConfig,
+) => {
+  const configuration = ensureConfiguration(config);
+  const llm = new ChatOllama({
+    model: configuration.localLlm,
+    format: "json",
+    temperature: 0,
+    baseUrl: configuration.localLlmBaseUrl,
+  });
+
+  const result = await llm.invoke([
+    new SystemMessage(reflectionInstructions(state.researchTopic)),
+    new HumanMessage(
+      `Identify a knowledge gap and generate a follow-up web search query based on our existing knowledge: ${state.runningSummary}`,
+    ),
+  ]);
+
+  const { followUpQuery } = JSON.parse(result.content as string);
+
+  if (!followUpQuery) {
+    // Fallback to a placeholder query
+    return { searchQuery: `Tell me more about ${state.researchTopic}` };
+  }
+  return { searchQuery: `Tell me more about ${followUpQuery}` };
+};
+</file>
+
+<file path="src/nodes/webResearch.ts">
+import { SummaryState } from "../agent/state";
+import { RunnableConfig } from "@langchain/core/runnables";
+import { ensureConfiguration, SearchAPI } from "../agent/configuration";
+import { tavily } from "@tavily/core";
+
+declare type TavilySearchResult = {
+  title: string;
+  url: string;
+  content: string;
+  rawContent?: string;
+  score: number;
+  publishedDate: string;
+};
+
+declare type TavilySearchResponse = {
+  results: TavilySearchResult[];
+};
+
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+
+const deduplicateAndFormatSources = (
+  searchResponse: TavilySearchResponse,
+  maxTokensPerSource: number,
+) => {
+  // Deduplicate by URL
+  const uniqueSources: { [key: string]: TavilySearchResult } = {};
+  searchResponse.results.forEach((source) => {
+    if (!uniqueSources[source.url]) {
+      uniqueSources[source.url] = source;
+    }
+  });
+
+  // Format output
+  let formattedText = "Sources:\n\n";
+  Object.values(uniqueSources).forEach((source) => {
+    formattedText += `Source ${source.title}:\n===\n`;
+    formattedText += `URL: ${source.url}\n===\n`;
+    formattedText += `Most relevant content from source: ${source.content}\n===\n`;
+    const charLimit = maxTokensPerSource * 4;
+    let rawContent = source.rawContent || "";
+    if (rawContent.length > charLimit) {
+      rawContent = rawContent.substring(0, charLimit) + "... [truncated]";
+    }
+    formattedText += `Full source content limited to ${maxTokensPerSource} tokens: ${rawContent}\n\n`;
+  });
+
+  return formattedText.trim();
+};
+
+export const webResearch = async (
+  state: SummaryState,
+  config: RunnableConfig,
+) => {
+  const configuration = ensureConfiguration(config);
+  let sources: string;
+  let webResearchResults: string;
+
+  switch (configuration.searchApi) {
+    case SearchAPI.TAVILY:
+      {
+        const tvly = tavily({
+          apiKey: TAVILY_API_KEY,
+        });
+        const context = await tvly.search(state.searchQuery, {
+          maxResults: 3,
+          includeRawContent: true,
+        });
+        webResearchResults = deduplicateAndFormatSources(context, 1000);
+        sources = context.results
+          .map((source) => `* ${source.title} : ${source.url}`)
+          .join("\n");
+      }
+      break;
+    default:
+      throw new Error(`Unsupported search API: ${configuration.searchApi}`);
+  }
+
+  return {
+    sourcesGathered: [sources],
+    researchLoopCount: state.researchLoopCount + 1,
+    webResearchResults: [webResearchResults],
+  };
+};
+</file>
+
+<file path="src/route/research.ts">
+import { SummaryState } from "../agent/state";
+import { RunnableConfig } from "@langchain/core/runnables";
+import { ensureConfiguration } from "../agent/configuration";
+
+export const routeResearch = (state: SummaryState, config: RunnableConfig) => {
+  const configuration = ensureConfiguration(config);
+  if (state.researchLoopCount <= configuration.maxWebResearchLoops) {
+    return "webResearch";
+  } else {
+    return "finalizeSummary";
+  }
+};
+</file>
+
+<file path="README.md">
+# Ollama Deep Researcher
+
+---
+
+##### Typescript Edition
+
+---
+
+> This repo is a Typescript edition of the [Ollama Deep Researcher](https://github.com/langchain-ai/ollama-deep-researcher) and the repo structure is inspired by the [langgraphjs-starter-template](https://github.com/langchain-ai/new-langgraphjs-project)
+
+Ollama Deep Researcher is a fully local web research assistant that uses any LLM hosted by [Ollama](https://ollama.com/search). Give it a topic and it will generate a web search query, gather web search results (via [Tavily](https://www.tavily.com/)), summarize the results of web search, reflect on the summary to examine knowledge gaps, generate a new search query to address the gaps, search, and improve the summary for a user-defined number of cycles. It will provide the user a final markdown summary with all sources used.
+
+![research-rabbit](https://github.com/user-attachments/assets/4308ee9c-abf3-4abb-9d1e-83e7c2c3f187)
+
+Short summary:
+<video src="https://github.com/user-attachments/assets/02084902-f067-4658-9683-ff312cab7944" controls></video>
+
+## 📺 Video Tutorials
+
+See it in action or build it yourself? Check out these helpful video tutorials:
+
+- [Overview of Ollama Deep Researcher with R1](https://www.youtube.com/watch?v=sGUjmyfof4Q) - Load and test [DeepSeek R1](https://api-docs.deepseek.com/news/news250120) [distilled models](https://ollama.com/library/deepseek-r1).
+- [Building Ollama Deep Researcher from Scratch](https://www.youtube.com/watch?v=XGuTzHoqlj8) - Overview of how this is built.
+
+## 🚀 Quickstart
+
+### Configuration
+
+In `./src/agent/configuration.ts` you can set the following configurations:
+
+- Set the name of your local LLM to use with Ollama (it will by default be `llama3.2`)
+- You can set the depth of the research iterations (it will by default be `3`)
+- You can set the base url of your llm (it will by default be `http://localhost:11434`)
+
+### Mac
+
+1. Download the Ollama app for Mac [here](https://ollama.com/download).
+
+2. Pull a local LLM from [Ollama](https://ollama.com/search). As an [example](https://ollama.com/library/deepseek-r1:8b):
+
+```bash
+ollama pull deepseek-r1:8b
+```
+
+3. Setup web search tool:
+
+- [Tavily API](https://tavily.com/)
+
+Set the corresponding environment variable via `.env` file you can simply copy from `.env.example`:
+
+```dotenv
+TAVILY_API_KEY=<your_tavily_api_key>
+```
+
+5. Clone the repository and launch the assistant with the LangGraph server:
+
+```bash
+# Clone the repository and start the LangGraph server
+git clone https://github.com/pacovk/ollama-deep-researcher-ts.git
+cd ollama-deep-researcher-ts
+yarn install
+docker compose up -d
+```
+
+### Using the React UI
+
+The project now includes a modern React UI for interacting with the research assistant.
+
+1. Install dependencies:
+
+```bash
+yarn install
+```
+
+2. Run both the backend server and UI in development mode:
+
+```bash
+yarn dev
+```
+
+This will start:
+
+- The backend API server at http://localhost:3001
+- The UI development server at http://localhost:3000
+
+3. For production use, build both and start the server:
+
+```bash
+yarn build:all
+yarn start
+```
+
+In production mode, both the API and UI are served from the same port (default: 3001).
+
+### Using the LangGraph Studio UI
+
+#### Docker Compose
+
+You can use the provided `docker-compose.yml` file to run LangGraph Studio with the Ollama Deep Researcher assistant.
+
+1. Start the LangGraph server with the Ollama Deep Researcher assistant:
+
+```bash
+docker compose up -d
+```
+
+Visit [LangGraph Studio Web UI](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024) to interact with the assistant.
+
+Give the assistant a topic for research, and you can visualize its process!
+
+<img width="1621" alt="Screenshot 2025-01-24 at 10 08 22 PM" src="https://github.com/user-attachments/assets/4de6bd89-4f3b-424c-a9cb-70ebd3d45c5f" />
+
+ℹ️ There is also a Ollama Web UI available at [http://localhost:2024](http://localhost:2024) to interact with the assistant.
+
+## How it works
+
+Ollama Deep Researcher is inspired by [IterDRAG](https://arxiv.org/html/2410.04343v1#:~:text=To%20tackle%20this%20issue%2C%20we,used%20to%20generate%20intermediate%20answers.). This approach will decompose a query into sub-queries, retrieve documents for each one, answer the sub-query, and then build on the answer by retrieving docs for the second sub-query. Here, we do similar:
+
+- Given a user-provided topic, use a local LLM (via [Ollama](https://ollama.com/search)) to generate a web search query
+- Uses a search engine (configured for [Tavily](https://www.tavily.com/)) to find relevant sources
+- Uses LLM to summarize the findings from web search related to the user-provided research topic
+- Then, it uses the LLM to reflect on the summary, identifying knowledge gaps
+- It generates a new search query to address the knowledge gaps
+- The process repeats, with the summary being iteratively updated with new information from web search
+- It will repeat down the research rabbit hole
+- Runs for a configurable number of iterations (see `configuration` tab)
+
+## Outputs
+
+The output of the graph is a markdown file containing the research summary, with citations to the sources used.
+
+All sources gathered during research are saved to the graph state.
+
+You can visualize them in the graph state, which is visible in LangGraph Studio:
+
+![Screenshot 2024-12-05 at 4 08 59 PM](https://github.com/user-attachments/assets/e8ac1c0b-9acb-4a75-8c15-4e677e92f6cb)
+
+The final summary is saved to the graph state as well:
+
+![Screenshot 2024-12-05 at 4 10 11 PM](https://github.com/user-attachments/assets/f6d997d5-9de5-495f-8556-7d3891f6bc96)
+</file>
+
+<file path="src/agent/configuration.ts">
+import { Annotation, LangGraphRunnableConfig } from "@langchain/langgraph";
+
+export enum SearchAPI {
+  TAVILY = "tavily",
+}
+
+export const ConfigurationAnnotation = Annotation.Root({
+  maxWebResearchLoops: Annotation<number>(),
+  localLlm: Annotation<string>(),
+  localLlmBaseUrl: Annotation<string>(),
+  searchApi: Annotation<SearchAPI>(),
+});
+
+export type Configuration = typeof ConfigurationAnnotation.State;
+
+export const ensureConfiguration = (
+  config?: LangGraphRunnableConfig,
+): Configuration => {
+  const configurable = config?.configurable || {};
+  return {
+    maxWebResearchLoops: configurable?.maxWebResearchLoops || 3,
+    localLlmBaseUrl:
+      configurable?.localLlmBaseUrl ||
+      process.env.LLM_BASE_URL ||
+      "http://localhost:11434",
+    localLlm: configurable?.localLlm || "GandalfBaum/llama3.2-claude3.7:latest",
+    searchApi: configurable?.searchApi || SearchAPI.TAVILY,
+  };
+};
+</file>
+
+<file path="src/agent/prompts.ts">
+export const queryWriterInstructions = (
+  researchTopic: string,
+) => `Your goal is to generate targeted web search query.
+
+The query will gather information related to a specific topic.
+
+<TOPIC>
+${researchTopic}
+</TOPIC>
+
+<FORMAT>
+Format your response as a JSON object with ALL three of these exact keys:
+   - "query": The actual search query string
+   - "aspect": The specific aspect of the topic being researched
+   - "rationale": Brief explanation of why this query is relevant
+</FORMAT>
+
+<EXAMPLE>
+Example output:
+{{
+    "query": "machine learning transformer architecture explained",
+    "aspect": "technical architecture",
+    "rationale": "Understanding the fundamental structure of transformer models"
+}}
+</EXAMPLE>
+
+Provide your response in JSON format:`;
+
+export const summarizerInstructions = `<GOAL>
+Generate a high-quality summary of the web search results and keep it concise / related to the user topic.
+</GOAL>
+
+<REQUIREMENTS>
+When creating a NEW summary:
+1. Highlight the most relevant information related to the user topic from the search results
+2. Ensure a coherent flow of information
+
+When EXTENDING an existing summary:                                                                                                                 
+1. Read the existing summary and new search results carefully.                                                    
+2. Compare the new information with the existing summary.                                                         
+3. For each piece of new information:                                                                             
+    a. If it's related to existing points, integrate it into the relevant paragraph.                               
+    b. If it's entirely new but relevant, add a new paragraph with a smooth transition.                            
+    c. If it's not relevant to the user topic, skip it.                                                            
+4. Ensure all additions are relevant to the user's topic.                                                         
+5. Verify that your final output differs from the input summary.                                                                                                                                                            
+</REQUIREMENTS >
+
+<FORMATTING >
+- Start directly with the updated summary, without preamble or titles. Do not use XML tags in the output.  
+</FORMATTING >
+`;
+
+export const reflectionInstructions = (
+  researchTopic: string,
+) => `You are an expert research assistant analyzing a summary about ${researchTopic}.
+
+<GOAL>
+1. Identify knowledge gaps or areas that need deeper exploration
+2. Generate a follow-up question that would help expand your understanding
+3. Focus on technical details, implementation specifics, or emerging trends that weren't fully covered
+</GOAL>
+
+<REQUIREMENTS>
+Ensure the follow-up question is self-contained and includes necessary context for web search.
+</REQUIREMENTS>
+
+<FORMAT>
+Format your response as a JSON object with these exact keys:
+- knowledgeGap: Describe what information is missing or needs clarification
+- followUpQuery: Write a specific question to address this gap
+</FORMAT>
+
+<EXAMPLE>
+Example output:
+{{
+    "knowledgeGap": "The summary lacks information about performance metrics and benchmarks",
+    "followUpQuery": "What are typical performance benchmarks and metrics used to evaluate [specific technology]?"
+}}
+</EXAMPLE>
+
+Provide your analysis in JSON format:`;
+</file>
+
+<file path="src/nodes/summarizeSources.ts">
+import { SummaryState } from "../agent/state";
+import { RunnableConfig } from "@langchain/core/runnables";
+import { ensureConfiguration } from "../agent/configuration";
+import { ChatOllama } from "@langchain/ollama";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { summarizerInstructions } from "../agent/prompts";
+
+export const summarizeSources = async (
+  state: SummaryState,
+  config: RunnableConfig,
+) => {
+  const existingSummary = state.runningSummary;
+  const mostRecentWebResearch =
+    state.webResearchResults[state.webResearchResults.length - 1];
+  let humanMessageContent;
+
+  if (existingSummary) {
+    humanMessageContent = `<User Input> \n ${state.researchTopic} \n <User Input>\n\n
+<Existing Summary> \n ${existingSummary} \n <Existing Summary>\n\n
+<New Search Results> \n ${mostRecentWebResearch} \n <New Search Results>`;
+  } else {
+    humanMessageContent = `<User Input> \n ${state.researchTopic} \n <User Input>\n\n 
+<Search Results> \n ${mostRecentWebResearch} \n <Search Results>`;
+  }
+
+  const configuration = ensureConfiguration(config);
+  const llm = new ChatOllama({
+    model: configuration.localLlm,
+    temperature: 0,
+    baseUrl: configuration.localLlmBaseUrl,
+  });
+
+  const result = await llm.invoke([
+    new SystemMessage(summarizerInstructions),
+    new HumanMessage(humanMessageContent),
+  ]);
+
+  // TODO: This is a hack to remove the <think> tags w/ Deepseek models
+  // It appears very challenging to prompt them out of the responses
+  const runningSummary = (result.content as string)
+    .replaceAll("<think>", " ")
+    .replaceAll("</think>", " ");
+
+  return { runningSummary: runningSummary };
+};
+</file>
+
+<file path="tsconfig.json">
+{
+  "extends": "@tsconfig/recommended",
+  "compilerOptions": {
+    "target": "ES2021",
+    "lib": ["ES2021", "ES2022.Object", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "noImplicitReturns": true,
+    "declaration": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useDefineForClassFields": true,
+    "strictPropertyInitialization": false,
+    "allowJs": true,
+    "strict": true,
+    "strictFunctionTypes": false,
+    "outDir": "dist",
+    "types": ["jest", "node"],
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/ui/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.js"],
+  "exclude": ["node_modules", "dist"]
+}
+</file>
+
+</files>
